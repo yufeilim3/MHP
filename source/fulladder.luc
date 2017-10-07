@@ -1,0 +1,48 @@
+module fulladder (
+    input clk,  // clock
+    input rst,
+    input in[3], // input of 3bit
+    output outc, // output for CarryOut
+    output outs // output for Sum
+  ) {
+sig sum; // sets up signal for sum
+sig cout; // sets up signal for cout
+
+  always { // always running this block of code
+    case (in[2:0]){ //all possible cases for the input, [2:0] is the index 0 to 2
+      default: //default values of cout and sum, following are the cases for fulladder (8 from truth table)
+        cout = 0;
+        sum = 0;
+      b000:
+        cout = 0;
+        sum = 0;
+      b010:
+        cout = 0;
+        sum = 1;
+      b100:
+        cout = 0;
+        sum = 1;
+      b110:
+        cout = 1;
+        sum = 0;
+      b001:
+        cout = 0;
+        sum  = 1;
+      b001:
+        cout = 0;
+        sum = 1;
+      b011:
+        cout = 1;
+        sum = 0;
+      b101:
+        cout = 1;
+        sum =0;
+      b111:
+        cout = 1;
+        sum = 1;
+  }
+    outc = cout; //outc is assigned to signal cout
+    outs = sum;  //outs is assigned to signal sum
+  }
+}
+

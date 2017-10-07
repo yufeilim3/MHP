@@ -1,0 +1,222 @@
+module mojo_top (
+    input clk,              // 50MHz clock
+    input rst_n,            // reset button (active low)
+    output led [8],         // 8 user controllable LEDs
+    input cclk,             // configuration clock, AVR ready when high
+    output spi_miso,        // AVR SPI MISO
+    input spi_ss,           // AVR SPI Slave Select
+    input spi_mosi,         // AVR SPI MOSI
+    input spi_sck,          // AVR SPI Clock
+    output spi_channel [4], // AVR general purpose pins (used by default to select ADC channel)
+    input avr_tx,           // AVR TX (FPGA RX)
+    output avr_rx,          // AVR RX (FPGA TX)
+    input avr_rx_busy,      // AVR RX buffer full
+    output io_led [3][8],   // LEDs on IO Shield, 3*8 array
+    input io_button[5],
+    output io_seg [8],      // 7-segment LEDs on IO Shield
+    output io_sel [4]      // Digit select on IO Shield
+   ){
+  
+  
+sig rst;                  // reset signal
+sig z[2];
+  
+.clk(clk) {
+    // The reset conditioner is used to synchronize the reset signal to the FPGA
+    // clock. This ensures the entire FPGA comes out of reset at the same time.
+    reset_conditioner reset_cond;
+   .rst(rst) {
+      fsm state ={STATEZERO,STATEONE, STATETWO , STATETHREE, STATEFOUR, STATEFIVE, STATESIX, STATESEVEN, STATEEIGHT};   // fsm with 9 states
+      dff counter[28];          // d flip-flop 28 bits wide
+      multi_seven_seg seg;      // multi_seven_seg module named seg initialised
+    }
+  }
+  
+  fulladder myfulladder;      // fulladder module named myfulladder initialised
+  always { 
+    reset_cond.in = ~rst_n; // input raw inverted reset signal
+    rst = reset_cond.out;   // conditioned reset
+    
+    led = 8h00;             // turn LEDs off
+    spi_miso = bz;          // not using SPI
+    spi_channel = bzzzz;    // not using flags
+    avr_rx = bz;            // not using serial po   
+    io_led = 3x{{8h00}};    // turn all io_led off
+    myfulladder.clk = clk;  // connect myfulladder clock to clk
+    myfulladder.rst = rst;  // connect myfulladder rest to rst
+    myfulladder.in = b000;  // set default myfulladder.in to be b000
+    seg.values = {4ha,4ha,4ha,4ha}; //switch off all io_seg
+ 
+    io_seg = ~seg.seg; // connect segments to the driver
+    io_sel = ~seg.sel; // connect digit select to the driver
+    case(state.q){     // cases of state.q
+      state.STATEZERO:     //initial state is when all io_led are off, counter.d is low and io_seg is off.
+        io_led = 3x{{8h00}}; 
+        counter.d = 0;
+        seg.values = {4ha,4ha,4ha,4ha};
+        if (io_button[1]==1){           //when io_button[1], which is the center button is pressed, state will move to STATEONE
+          state.d = state.STATEONE;
+        }
+      state.STATEONE:               //first test case when 3 inputs of full adder is zero (000 equivalent to A/B/Cin)
+        myfulladder.in = b000;      // binary number 000 is assigned as input for myfulladder
+        io_led[0][0] = myfulladder.outs;  // sum displayed on io_led[0][0]
+        io_led[1][0] =  myfulladder.outc; // carry out displayed on io_led[1][0]
+        z[0] = myfulladder.outs;          // z[0] is assigned to be the sum of the adder
+        z[1] = myfulladder.outc;          // z[1] is assigned to be carry out of the adder
+        seg.values = {4ha,4h0,4h0,4h0};   // io_seg displays 000
+        counter.d = counter.q + 1;        // counter starts 
+        if (counter.q[27]==1 && z == b00){            // when the most significant bit of counter becomes 1 AND the output is correct for the test case
+          counter.d = 0;                  // reset counter
+          state.d = state.STATETWO;       // transit to STATETWO
+        }
+        else if (z!=b00){                // if the output is wrong for the test case
+          io_led[2][0] = 1;              // light up the last array of the led to indicate the error of this test case. Each state's error is assigned to one led
+          if (counter.q[27]==1){        // once the counter reaches zero
+            counter.d=0;                // reset counter
+            state.d=state.STATETWO;     // continue testing the rest of the test cases by transitioning to next state
+          }
+        }
+          
+      state.STATETWO:              // rest of the test cases fulfils for the eight test cases for 1 bit full adder i.e. truth table
+        myfulladder.in = b001;    
+        io_led[0][0] = myfulladder.outs;    
+        io_led[1][0] =  myfulladder.outc; 
+        z[0] = myfulladder.outs;
+        z[1] = myfulladder.outc;   
+        seg.values = {4ha,4h0,4h0,4h1};     
+        counter.d = counter.q + 1;           
+        if (counter.q[27]==1 && z==b01){              
+          counter.d = 0;                    
+          state.d = state.STATETHREE;        
+        }
+        else if (z!=b01){
+          io_led[2][1] = 1;
+          if (counter.q[27]==1){
+            counter.d=0;
+            state.d=state.STATETHREE;
+          }
+        }
+        
+      state.STATETHREE:           
+        myfulladder.in = b010;    
+        io_led[0][0] = myfulladder.outs;      
+        io_led[1][0] =  myfulladder.outc;
+        z[0] = myfulladder.outs;
+        z[1] = myfulladder.outc;     
+        seg.values = {4ha,4h0,4h1,4h0};      
+        counter.d = counter.q + 1;           
+        if (counter.q[27]==1 && z==b01){               
+          counter.d = 0 ;                                          
+          state.d = state.STATEFOUR;         
+        }
+         else if (z!=b01){
+          io_led[2][2] = 1;
+          if (counter.q[27]==1){
+            counter.d=0;
+            state.d=state.STATEFOUR;
+          }
+        }
+        
+      state.STATEFOUR:
+        myfulladder.in = b011;
+        io_led[0][0] = myfulladder.outs; 
+        io_led[1][0] =  myfulladder.outc;
+        z[0] = myfulladder.outs;
+        z[1] = myfulladder.outc; 
+        seg.values = {4ha,4h0,4h1,4h1};
+        counter.d = counter.q + 1;
+        if (counter.q[27]==1 &&z==b10){
+          counter.d = 0;
+          state.d = state.STATEFIVE;
+        }
+         else if (z!=b10){
+          io_led[2][3] = 1;
+          if (counter.q[27]==1){
+            counter.d=0;
+            state.d=state.STATEFIVE;
+          }
+        }
+        
+      state.STATEFIVE:
+        myfulladder.in = b100;
+        io_led[0][0] = myfulladder.outs; 
+        io_led[1][0] =  myfulladder.outc;
+        z[0] = myfulladder.outs;
+        z[1] = myfulladder.outc;
+        seg.values = {4ha,4h1,4h0,4h0}; 
+        counter.d = counter.q + 1;
+        if (counter.q[27]==1 &&z==b01){
+          counter.d = 0;
+          state.d = state.STATESIX;
+        }
+         else if (z!=b01){
+          io_led[2][4] = 1;
+          if (counter.q[27]==1){
+            counter.d=0;
+            state.d=state.STATESIX;
+          }
+        }
+        
+      state.STATESIX:
+        myfulladder.in = b101;
+        io_led[0][0] = myfulladder.outs; 
+        io_led[1][0] =  myfulladder.outc;
+        z[0] = myfulladder.outs;
+        z[1] = myfulladder.outc;
+        seg.values = {4ha,4h1,4h0,4h1};
+        counter.d = counter.q + 1;
+        if (counter.q[27]==1 &&z==b10){
+          counter.d = 0;
+          state.d = state.STATESEVEN;
+        }
+         else if (z!=b10){
+          io_led[2][5] = 1;
+          if (counter.q[27]==1){
+            counter.d=0;
+            state.d=state.STATESEVEN;
+          }
+        }
+        
+      state.STATESEVEN:
+        myfulladder.in = b110;
+        io_led[0][0] = myfulladder.outs; 
+        io_led[1][0] =  myfulladder.outc;
+        z[0] = myfulladder.outs;
+        z[1] = myfulladder.outc; 
+        seg.values = {4ha,4h1,4h1,4h0};
+        counter.d = counter.q + 1;
+        if (counter.q[27]==1 && z ==b10){
+          counter.d = 0;
+          state.d = state.STATEEIGHT;
+        }
+         else if (z!=b10){
+          io_led[2][6] = 1;
+          if (counter.q[27]==1){
+            counter.d=0;
+            state.d=state.STATEEIGHT;
+          }
+        }
+        
+      state.STATEEIGHT:
+        myfulladder.in = b111;
+        io_led[0][0] = myfulladder.outs; 
+        io_led[1][0] =  myfulladder.outc;
+        z[0] = myfulladder.outs;
+        z[1] = myfulladder.outc; 
+        seg.values = {4ha,4h1,4h1,4h1};
+        counter.d = counter.q + 1;
+        if (counter.q[27]==1 && z==b11){
+          counter.d = 0;
+          state.d = state.STATEZERO;      // return back to STATEZERO
+        }   
+         else if (z!=b11){
+          io_led[2][7] = 1;
+          if (counter.q[27]==1){
+            counter.d=0;
+            state.d=state.STATEZERO;
+          }
+        }
+    }  
+  }
+}
+  
